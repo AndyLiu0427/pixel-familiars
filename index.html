@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>像素魔寵 Pixel Familiars</title>
+  <meta name="description" content="離線也能掛機的像素風魔寵養成遊戲。收集魔寵、自動戰鬥、進化推關。">
+  <meta name="theme-color" content="#131022">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header id="topbar">
+    <div class="brand">
+      <canvas id="logoCanvas" width="64" height="64" aria-hidden="true"></canvas>
+      <div class="brand-text">
+        <h1 id="titleText">像素魔寵</h1>
+        <div class="zone-label"><span id="zoneLabel"></span><span id="waveLabel"></span></div>
+      </div>
+    </div>
+    <div class="currencies">
+      <div class="pill pill-gold" id="goldPill" title="Gold">
+        <span class="cur-ico cur-gold" aria-hidden="true"></span><span class="cur-val" id="goldVal">0</span>
+      </div>
+      <div class="pill pill-gem" id="gemPill" title="Gems">
+        <span class="cur-ico cur-gem" aria-hidden="true"></span><span class="cur-val" id="gemVal">0</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="layout">
+    <section id="battleWrap" aria-label="battle">
+      <canvas id="battle"></canvas>
+      <div id="teamHpWrap" aria-hidden="true">
+        <div id="teamHpBar"><div id="teamHpFill"></div></div>
+        <div id="dpsLabel"></div>
+      </div>
+      <div id="bossTimer" hidden></div>
+      <button id="bossRetry" class="btn btn-accent" hidden></button>
+      <div id="adCorner">
+        <button id="boostBtn" class="btn btn-ad"></button>
+      </div>
+      <div id="boostChip" hidden></div>
+    </section>
+
+    <section id="panel">
+      <nav id="tabs" role="tablist"></nav>
+      <div id="panelContent"></div>
+    </section>
+  </main>
+
+  <div id="toasts" aria-live="polite"></div>
+  <div id="modalRoot"></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>

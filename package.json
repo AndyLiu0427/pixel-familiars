@@ -1,0 +1,12 @@
+{
+  "name": "pixel-familiars",
+  "version": "1.0.0",
+  "description": "Offline-capable idle pixel pet-raising game (像素魔寵)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "start": "python3 -m http.server 8360",
+    "icons": "python3 tools/gen_icons.py"
+  }
+}
