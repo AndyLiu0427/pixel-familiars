@@ -358,17 +358,21 @@ test('migrate rejects future versions and junk', () => {
 
 // ---------- sprites ----------
 
-test('all sprites are 24x24 with palette coverage (incl shiny)', () => {
+test('sprites are square (32 chibi familiars, 24 monsters) with palette coverage', () => {
   for (const [key, s] of Object.entries(SPRITES)) {
-    assert.equal(s.grid.length, 24, `${key} rows`);
+    assert.ok(s.size === 24 || s.size === 32, `${key} size ${s.size}`);
+    assert.equal(s.grid.length, s.size, `${key} rows`);
     for (const row of s.grid) {
-      assert.equal(row.length, 24, `${key} row width`);
+      assert.equal(row.length, s.size, `${key} row width`);
       for (const ch of row) {
         if (ch === '.') continue;
         assert.ok(s.pal[ch], `${key} missing palette '${ch}'`);
         if (s.shiny) assert.ok(s.shiny[ch], `${key} missing shiny palette '${ch}'`);
       }
     }
+  }
+  for (const sp of SPECIES) {
+    assert.equal(SPRITES[sp.sprite].size, 32, `${sp.id} should be 32x32 chibi`);
   }
 });
 

@@ -294,8 +294,8 @@ button { font: inherit; color: inherit; cursor: pointer; }
 
 .card .sprite-box {
   flex: 0 0 auto;
-  width: 56px;
-  height: 56px;
+  width: 68px;
+  height: 68px;
   display: grid;
   place-items: center;
   background: rgba(0, 0, 0, 0.30);
@@ -513,7 +513,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
   box-shadow: 0 0 0 var(--px) var(--ink);
 }
 
-.book-cell .sprite-box { width: 56px; height: 56px; display: grid; place-items: center; background: rgba(0,0,0,.3); box-shadow: 0 0 0 1px var(--ink); }
+.book-cell .sprite-box { width: 68px; height: 68px; display: grid; place-items: center; background: rgba(0,0,0,.3); box-shadow: 0 0 0 1px var(--ink); }
 .book-cell canvas { image-rendering: pixelated; }
 .book-cell.locked { opacity: 0.55; }
 .book-cell.shiny-cell:not(.locked) { box-shadow: 0 0 0 var(--px) var(--teal); }

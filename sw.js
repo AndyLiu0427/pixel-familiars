@@ -1,5 +1,5 @@
 // Cache-first app shell so the installed game runs fully offline.
-const CACHE = 'pixel-familiars-v3';
+const CACHE = 'pixel-familiars-v4';
 const SHELL = [
   './',
   './index.html',

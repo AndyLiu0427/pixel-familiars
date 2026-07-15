@@ -441,21 +441,26 @@ export class BattleScene {
       const col = i % 2, row = Math.floor(i / 2);
       const x = w * 0.10 + col * (size.w * 0.85) - row * size.w * 0.28;
       const bob = Math.sin(this.time * 2.4 + i * 1.7) * 3;
-      const lunge = this.attackPhase(i);
-      const y = this.groundY() - size.h + bob - row * size.h * 0.42;
+      const mo = this.attackMotion(i);
+      const baseY = this.groundY() - row * size.h * 0.42;
       const stage = petStage(pet);
       if (STAGE_GLOW[stage]) {
         ctx.fillStyle = STAGE_GLOW[stage];
         ctx.beginPath();
-        ctx.ellipse(x + size.w / 2, this.groundY() - row * size.h * 0.42 + 4, size.w * 0.55, 8, 0, 0, Math.PI * 2);
+        ctx.ellipse(x + size.w / 2, baseY + 4, size.w * 0.55, 8, 0, 0, Math.PI * 2);
         ctx.fill();
       }
       ctx.fillStyle = 'rgba(0,0,0,0.30)';
       ctx.beginPath();
-      ctx.ellipse(x + size.w / 2 + lunge * 0.6, this.groundY() - row * size.h * 0.42 + 6, size.w * 0.38, 5, 0, 0, Math.PI * 2);
+      ctx.ellipse(x + size.w / 2 + mo.dx * 0.6, baseY + 6, size.w * 0.38 * mo.sx, 5, 0, 0, Math.PI * 2);
       ctx.fill();
       const breath = Math.floor(this.time * 2 + i) % 2;
-      drawSprite(ctx, sp.sprite, x + lunge, y, scale, { brighten: stage * 0.04, shiny: pet.shiny, breath });
+      // Anchor at the feet so squash/stretch keeps the pet planted
+      ctx.save();
+      ctx.translate(x + size.w / 2 + mo.dx, baseY);
+      ctx.scale(mo.sx, mo.sy);
+      drawSprite(ctx, sp.sprite, -size.w / 2, -size.h + bob, scale, { brighten: stage * 0.04, shiny: pet.shiny, breath });
+      ctx.restore();
     });
   }
 
@@ -484,8 +489,9 @@ export class BattleScene {
     ctx.fill();
     const flash = this.hitFlash > 0;
     if (flash) this.hitFlash -= dt;
+    const knock = flash ? 3 : 0;
     const mBreath = Math.floor(this.time * 1.6) % 2;
-    drawSprite(ctx, m.key, x, y, mScale, { flip: true, breath: mBreath, brighten: flash ? 0.45 : (m.isBoss ? 0.06 : 0) });
+    drawSprite(ctx, m.key, x + knock, y, mScale, { flip: true, breath: mBreath, brighten: flash ? 0.45 : (m.isBoss ? 0.06 : 0) });
 
     const bw = Math.max(70, size.w);
     const bx = this.monsterX() - bw / 2;
@@ -613,9 +619,24 @@ export class BattleScene {
     ctx.globalAlpha = 1;
   }
 
-  attackPhase(i) {
+  // Three-phase attack: windup (lean back, squash), strike (fast lunge,
+  // stretch), recover. Timing per the animation research: snap the strike.
+  attackMotion(i) {
     const t = (this.time * 2.2 + i * 0.8) % 2;
-    return t < 0.25 ? Math.sin((t / 0.25) * Math.PI) * 8 : 0;
+    if (t < 0.12) {
+      const p = t / 0.12;
+      return { dx: -5 * p, sx: 1 - 0.06 * p, sy: 1 + 0.05 * p };
+    }
+    if (t < 0.3) {
+      const p = (t - 0.12) / 0.18;
+      const s = Math.sin(p * Math.PI);
+      return { dx: -5 + 22 * p, sx: 1 + 0.12 * s, sy: 1 - 0.08 * s };
+    }
+    if (t < 0.55) {
+      const p = (t - 0.3) / 0.25;
+      return { dx: 17 * (1 - p) * (1 - p), sx: 1, sy: 1 };
+    }
+    return { dx: 0, sx: 1, sy: 1 };
   }
 }
 
