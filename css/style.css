@@ -445,6 +445,104 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .ad-stub-note { color: var(--muted); font-size: 11px; margin: 6px 0 14px; }
 .ad-stub-count { font-size: 13px; color: var(--gold); min-height: 20px; margin-bottom: 10px; }
 
+/* ---------- Stars / shiny ---------- */
+
+.star-row {
+  color: var(--gold);
+  font-size: 12px;
+  letter-spacing: 2px;
+  margin: 2px 0;
+}
+
+.shiny-tag {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--teal);
+  letter-spacing: 0.5px;
+}
+
+.gold-text { color: var(--gold); }
+.teal-text { color: var(--teal); }
+
+/* ---------- Collection book ---------- */
+
+.book-head { margin-bottom: 12px; }
+.book-head h2 { font-size: 15px; color: var(--gold); }
+
+.book-bonus {
+  margin-top: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--teal);
+  background: var(--panel-2);
+  box-shadow: 0 0 0 var(--px) var(--ink);
+}
+
+.ms-list { margin-bottom: 12px; }
+
+.ms-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 11.5px;
+  background: var(--panel-2);
+  box-shadow: 0 0 0 1px var(--ink);
+  margin-bottom: 4px;
+}
+
+.ms-row.done { opacity: 0.6; }
+.ms-state { color: var(--muted); white-space: nowrap; }
+.ms-row.done .ms-state { color: var(--gold); }
+
+.book-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.book-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 6px;
+  background: var(--panel-2);
+  box-shadow: 0 0 0 var(--px) var(--ink);
+}
+
+.book-cell .sprite-box { width: 56px; height: 56px; display: grid; place-items: center; background: rgba(0,0,0,.3); box-shadow: 0 0 0 1px var(--ink); }
+.book-cell canvas { image-rendering: pixelated; }
+.book-cell.locked { opacity: 0.55; }
+.book-cell.shiny-cell:not(.locked) { box-shadow: 0 0 0 var(--px) var(--teal); }
+.book-name { font-size: 10.5px; color: var(--text); text-align: center; }
+.book-cell.locked .book-name { color: var(--muted); }
+.book-mastered { font-size: 9.5px; color: var(--gold); font-weight: 700; }
+
+/* ---------- Gear ---------- */
+
+.gear-head { margin-bottom: 12px; }
+.gear-actions { display: flex; gap: 8px; margin-top: 6px; }
+.gear-actions .btn { flex: 1; }
+
+.gear-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 11.5px;
+}
+
+.gear-slot { color: var(--muted); min-width: 44px; }
+.gear-stat { font-weight: 700; flex: 1; }
+.gear-row .btn-sm { min-height: 28px; padding: 2px 8px; font-size: 10.5px; }
+
+/* Golden frame reward (book milestone 20) */
+body.golden #topbar { box-shadow: 0 var(--px) 0 var(--gold), 0 6px 14px rgba(0, 0, 0, 0.35); }
+body.golden #logoCanvas { box-shadow: 0 0 0 var(--px) var(--gold); }
+
 /* ---------- Upgrades ---------- */
 
 .up-row { display: flex; align-items: center; gap: 12px; }

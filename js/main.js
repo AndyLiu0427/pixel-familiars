@@ -25,6 +25,20 @@ if (saved) {
   if (result.kills > 0) ui.showWelcomeBack(result);
 }
 
+// Daily reward (local date). Waits for the welcome-back modal to close first.
+// Skipped on the very first visit so a new player's opening moment stays clean.
+if (saved) {
+  const today = new Date().toLocaleDateString('sv');
+  const daily = game.claimDaily(today);
+  if (daily) {
+    const show = () => {
+      if (document.querySelector('.modal-scrim')) { setTimeout(show, 500); return; }
+      ui.showDaily(daily);
+    };
+    show();
+  }
+}
+
 // Interstitial on zone advance (frequency-guarded, never blocks gameplay)
 game.on('zone_advance', () => { maybeInterstitial('zone_advance', state); });
 

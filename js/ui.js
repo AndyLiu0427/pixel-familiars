@@ -1,17 +1,24 @@
-// DOM UI: header, tabs, panels, modals, toasts. All dynamic values are set
-// with textContent; only trusted static i18n strings go through innerHTML-free
-// element builders below.
+// DOM UI v2: tabs (team / eggs / book / gear / upgrades / settings), modals,
+// toasts. Dynamic values always go through textContent.
 
 import { CONFIG } from './config.js';
 import { t, tn, getLang, setLang } from './i18n.js';
-import { RARITY, SPECIES, UPGRADES, upgradeCost, xpForLevel, STAGE_LEVELS, zoneData } from './data.js';
-import { TEAM_SIZE, famAtk, famHp, famStage, speciesById, computeOffline, applyOffline } from './game.js';
-import { spriteToCanvas, drawSprite } from './sprites.js';
+import {
+  RARITY, SPECIES, UPGRADES, upgradeCost, xpForLevel, STAGE_LEVELS, zoneData,
+  STAR_COSTS, MAX_STARS, levelCap, BOOK_MILESTONES, GEAR_SLOTS, GEAR_RARITY,
+  GEAR_CAP, FORGE_MAX, forgeCost, gearStat,
+} from './data.js';
+import {
+  TEAM_SIZE, petAtk, petHp, petStage, speciesById, bookEntries, bookMult,
+  computeOffline, applyOffline,
+} from './game.js';
+import { spriteToCanvas, spriteToSilhouette } from './sprites.js';
 import { fmt } from './battle.js';
 import { showRewarded } from './ads.js';
 import { saveState, clearSave, exportString, importString } from './save.js';
 
 const $ = sel => document.querySelector(sel);
+const TABS = ['team', 'eggs', 'book', 'gear', 'upgrades', 'settings'];
 
 function el(tag, cls, text) {
   const n = document.createElement(tag);
@@ -19,6 +26,8 @@ function el(tag, cls, text) {
   if (text != null) n.textContent = text;
   return n;
 }
+
+function stars(n) { return '★'.repeat(n) + '☆'.repeat(MAX_STARS - n); }
 
 export class UI {
   constructor(game) {
@@ -42,13 +51,12 @@ export class UI {
 
   drawLogo() {
     const cv = $('#logoCanvas');
+    cv.width = 72; cv.height = 72;
     const ctx = cv.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, 64, 64);
-    drawSprite(ctx, 'emberfox', 0, 0, 4);
+    ctx.clearRect(0, 0, 72, 72);
+    import('./sprites.js').then(({ drawSprite }) => drawSprite(ctx, 'emberfox', 0, 0, 3));
   }
-
-  // ---------- Header ----------
 
   refreshHeader() {
     const st = this.game.state;
@@ -58,6 +66,7 @@ export class UI {
     setText('#waveLabel', this.game.isBossWave() ? t('boss_wave') : t('wave', { n: st.wave }));
     setText('#titleText', t('title'));
     document.title = getLang() === 'en' ? 'Pixel Familiars' : `${t('title')} Pixel Familiars`;
+    document.body.classList.toggle('golden', st.book.claimed.includes(3));
   }
 
   bump(sel) {
@@ -78,13 +87,17 @@ export class UI {
       boost.disabled = false;
       if (ok) this.game.startBoost();
     });
-
     const retry = $('#bossRetry');
     retry.textContent = t('boss_wave');
     retry.addEventListener('click', () => {
       this.game.retryBoss();
       retry.hidden = true;
     });
+  }
+
+  bindBattleButtonsText() {
+    $('#boostBtn').textContent = t('boost_btn');
+    $('#bossRetry').textContent = t('boss_wave');
   }
 
   refreshBattleOverlays() {
@@ -119,16 +132,26 @@ export class UI {
 
   bindGameEvents() {
     const g = this.game;
-    g.on('kill', () => { this.refreshHeader(); this.bump('#goldVal'); });
+    g.on('kill', ({ monster, drop }) => {
+      this.refreshHeader();
+      this.bump('#goldVal');
+      if (monster.isBoss) this.toast(t('boss_defeated'), 'gold');
+      if (drop && drop.rarity >= 2) this.toast(`${t('gear_dropped')} ${t('rarity_gear')[drop.rarity]}`, 'gold');
+    });
     g.on('gems', () => this.bump('#gemVal'));
     g.on('zone_advance', z => { this.toast(t('zone_cleared', { name: tn(z) }), 'gold'); this.refreshHeader(); });
-    g.on('kill', ({ monster }) => { if (monster.isBoss) this.toast(t('boss_defeated'), 'gold'); });
     g.on('wipe', () => this.toast(t('team_wiped')));
-    g.on('evolve', fam => {
-      this.toast(`${tn(speciesById(fam.speciesId))} → ${t('stage_names')[famStage(fam)]}`, 'gold');
+    g.on('evolve', ({ speciesId, pet }) => {
+      this.toast(`${tn(speciesById(speciesId))} → ${t('stage_names')[petStage(pet)]}`, 'gold');
       if (this.activeTab === 'team') this.renderPanel();
     });
     g.on('levelup', () => { if (this.activeTab === 'team') this.softRefreshTeam(); });
+    g.on('milestone', ms => {
+      const key = { gems: 'ms_gems', egg: 'ms_egg', secret: 'ms_secret', frame: 'ms_frame' }[ms.reward];
+      this.toast(`${t('milestone_reached')} ${t(key, { at: ms.at, n: ms.amount ?? '' })}`, 'gold');
+      this.refreshHeader();
+    });
+    g.on('starup', () => { if (this.activeTab === 'team') this.renderPanel(); });
   }
 
   // ---------- Tabs ----------
@@ -136,7 +159,7 @@ export class UI {
   buildTabs() {
     const tabs = $('#tabs');
     tabs.replaceChildren();
-    for (const key of ['team', 'eggs', 'upgrades', 'settings']) {
+    for (const key of TABS) {
       const b = el('button', 'tab', t(`tab_${key}`));
       b.setAttribute('role', 'tab');
       b.setAttribute('aria-selected', String(key === this.activeTab));
@@ -156,69 +179,84 @@ export class UI {
     c.classList.remove('entering');
     void c.offsetWidth;
     c.classList.add('entering');
-    if (this.activeTab === 'team') this.renderTeam(c);
-    else if (this.activeTab === 'eggs') this.renderEggs(c);
-    else if (this.activeTab === 'upgrades') this.renderUpgrades(c);
-    else this.renderSettings(c);
+    ({
+      team: () => this.renderTeam(c),
+      eggs: () => this.renderEggs(c),
+      book: () => this.renderBook(c),
+      gear: () => this.renderGear(c),
+      upgrades: () => this.renderUpgrades(c),
+      settings: () => this.renderSettings(c),
+    })[this.activeTab]();
   }
 
   // ---------- Team ----------
 
   renderTeam(c) {
     const st = this.game.state;
-    c.appendChild(el('div', 'section-note', `${t('collection', { a: st.seenSpecies.length, b: SPECIES.length })} · ${t('about_offline')}`));
-    const sorted = [...st.familiars].sort((a, b) => {
-      const ta = st.team.includes(a.id) ? 0 : 1;
-      const tb = st.team.includes(b.id) ? 0 : 1;
-      return ta - tb || b.rarity - a.rarity || b.level - a.level;
+    const { revealed } = bookEntries(st);
+    c.appendChild(el('div', 'section-note',
+      `${t('collection', { a: revealed, b: SPECIES.length * 2 })} · ${t('about_offline')}`));
+    const ids = Object.keys(st.pets).sort((a, b) => {
+      const ta = st.team.includes(a) ? 0 : 1;
+      const tb = st.team.includes(b) ? 0 : 1;
+      return ta - tb || st.pets[b].rarity - st.pets[a].rarity || st.pets[b].level - st.pets[a].level;
     });
-    for (const fam of sorted) c.appendChild(this.famCard(fam));
+    for (const id of ids) c.appendChild(this.petCard(id));
   }
 
-  famCard(fam) {
+  petCard(id) {
     const st = this.game.state;
-    const sp = speciesById(fam.speciesId);
-    const onTeam = st.team.includes(fam.id);
+    const pet = st.pets[id];
+    const sp = speciesById(id);
+    const onTeam = st.team.includes(id);
     const card = el('div', `card${onTeam ? ' on-team' : ''}`);
-    card.dataset.famId = fam.id;
+    card.dataset.petId = id;
 
     const box = el('div', 'sprite-box');
-    box.appendChild(spriteToCanvas(sp.sprite, 3, { brighten: famStage(fam) * 0.05 }));
+    box.appendChild(spriteToCanvas(sp.sprite, 2, { shiny: pet.shiny }));
     card.appendChild(box);
 
     const body = el('div', 'card-body');
     const title = el('div', 'card-title');
     title.appendChild(el('span', null, tn(sp)));
-    const rar = el('span', 'rarity-tag', t('rarity_names')[fam.rarity]);
-    rar.style.color = RARITY[fam.rarity].color;
+    const rar = el('span', 'rarity-tag', t('rarity_names')[pet.rarity]);
+    rar.style.color = RARITY[pet.rarity].color;
     title.appendChild(rar);
+    if (pet.shiny) title.appendChild(el('span', 'shiny-tag', t('shiny')));
     body.appendChild(title);
 
-    const stage = famStage(fam);
-    const nextEvo = stage < STAGE_LEVELS.length ? t('evolve_at', { n: STAGE_LEVELS[stage] }) : t('max_stage');
+    const starRow = el('div', 'star-row', stars(pet.stars));
+    body.appendChild(starRow);
+
     body.appendChild(el('div', 'card-sub',
-      `${t('level_short', { n: fam.level })} · ${t('stage_names')[stage]} · ${t('atk')} ${fmt(famAtk(fam, st.upgrades))} · ${t('hp')} ${fmt(famHp(fam, st.upgrades))}`));
-    body.appendChild(el('div', 'card-sub', nextEvo));
+      `${t('level_short', { n: pet.level })}/${Math.max(levelCap(pet.stars), pet.level)} · ${t('stage_names')[petStage(pet)]} · ${t('atk')} ${fmt(petAtk(st, id))} · ${t('hp')} ${fmt(petHp(st, id))}`));
 
     const bar = el('div', 'xp-bar');
     const fill = el('div', 'xp-fill');
-    fill.style.width = `${Math.min(100, (fam.xp / xpForLevel(fam.level)) * 100)}%`;
+    fill.style.width = `${Math.min(100, (pet.xp / xpForLevel(pet.level)) * 100)}%`;
     bar.appendChild(fill);
     body.appendChild(bar);
     card.appendChild(body);
 
     const actions = el('div', 'card-actions');
+
+    if (pet.stars < MAX_STARS) {
+      const have = st.shards[id] ?? 0;
+      const need = STAR_COSTS[pet.stars];
+      const starBtn = el('button', 'btn btn-sm btn-accent', t('star_up_cost', { a: fmt(have), b: need }));
+      starBtn.disabled = have < need;
+      starBtn.addEventListener('click', () => { this.game.starUp(id); });
+      actions.appendChild(starBtn);
+    } else {
+      actions.appendChild(el('span', 'card-sub', t('max_stars')));
+    }
+
     const btn = el('button', 'btn btn-sm', onTeam ? t('rest') : t('deploy'));
     btn.disabled = onTeam && st.team.length === 1;
     btn.addEventListener('click', () => {
-      if (onTeam) {
-        this.game.setTeam(st.team.filter(id => id !== fam.id));
-      } else if (st.team.length >= TEAM_SIZE) {
-        this.toast(t('team_full'));
-        return;
-      } else {
-        this.game.setTeam([...st.team, fam.id]);
-      }
+      if (onTeam) this.game.setTeam(st.team.filter(x => x !== id));
+      else if (st.team.length >= TEAM_SIZE) { this.toast(t('team_full')); return; }
+      else this.game.setTeam([...st.team, id]);
       this.renderPanel();
     });
     actions.appendChild(btn);
@@ -227,16 +265,16 @@ export class UI {
   }
 
   softRefreshTeam() {
-    // Update level/xp text in place without rebuilding (avoids animation spam)
     const st = this.game.state;
-    for (const card of document.querySelectorAll('#panelContent .card[data-fam-id]')) {
-      const fam = st.familiars.find(f => f.id === Number(card.dataset.famId));
-      if (!fam) continue;
-      const subs = card.querySelectorAll('.card-sub');
-      if (subs[0]) subs[0].textContent =
-        `${t('level_short', { n: fam.level })} · ${t('stage_names')[famStage(fam)]} · ${t('atk')} ${fmt(famAtk(fam, st.upgrades))} · ${t('hp')} ${fmt(famHp(fam, st.upgrades))}`;
+    for (const card of document.querySelectorAll('#panelContent .card[data-pet-id]')) {
+      const id = card.dataset.petId;
+      const pet = st.pets[id];
+      if (!pet) continue;
+      const sub = card.querySelector('.card-sub');
+      if (sub) sub.textContent =
+        `${t('level_short', { n: pet.level })}/${Math.max(levelCap(pet.stars), pet.level)} · ${t('stage_names')[petStage(pet)]} · ${t('atk')} ${fmt(petAtk(st, id))} · ${t('hp')} ${fmt(petHp(st, id))}`;
       const fill = card.querySelector('.xp-fill');
-      if (fill) fill.style.width = `${Math.min(100, (fam.xp / xpForLevel(fam.level)) * 100)}%`;
+      if (fill) fill.style.width = `${Math.min(100, (pet.xp / xpForLevel(pet.level)) * 100)}%`;
     }
   }
 
@@ -245,15 +283,16 @@ export class UI {
   renderEggs(c) {
     const st = this.game.state;
     const hero = el('div', 'egg-hero wob');
-    hero.appendChild(spriteToCanvas('egg', 5));
+    hero.appendChild(spriteToCanvas('egg', 4));
     const actions = el('div', 'egg-actions');
 
     const hatch = el('button', 'btn btn-gold', `${t('egg_hatch')} · ${t('egg_cost', { n: CONFIG.eggCostGems })}`);
     hatch.addEventListener('click', () => {
-      const fam = this.game.hatchEgg();
-      if (!fam) { this.toast(t('egg_not_enough')); return; }
+      const result = this.game.hatchEgg();
+      if (!result) { this.toast(t('egg_not_enough')); return; }
       this.refreshHeader();
-      this.hatchModal(fam);
+      this.renderPanel();
+      this.hatchModal(result);
     });
     actions.appendChild(hatch);
 
@@ -265,10 +304,10 @@ export class UI {
       const ok = await showRewarded('free_egg');
       if (!ok) { free.disabled = false; return; }
       st.lastFreeEgg = Date.now();
-      const fam = this.game.hatchEgg({ free: true });
+      const result = this.game.hatchEgg({ free: true });
       this.refreshHeader();
       this.renderPanel();
-      this.hatchModal(fam);
+      this.hatchModal(result);
     });
     actions.appendChild(free);
 
@@ -288,22 +327,27 @@ export class UI {
     hero.appendChild(actions);
     c.appendChild(hero);
 
-    // Odds table
-    const note = el('div', 'section-note',
-      RARITY.map((r, i) => `${t('rarity_names')[i]} ${r.weight}%`).join(' · '));
-    c.appendChild(note);
+    c.appendChild(el('div', 'section-note', t('pity_hint', { n: Math.max(1, 40 - st.pity) })));
+    c.appendChild(el('div', 'section-note',
+      RARITY.map((r, i) => `${t('rarity_names')[i]} ${r.weight}%`).join(' · ')));
   }
 
-  hatchModal(fam) {
-    const sp = speciesById(fam.speciesId);
+  hatchModal(result) {
+    const sp = speciesById(result.speciesId);
     const { scrim, modal } = this.modal();
-    modal.appendChild(el('h2', null, t('hatched', { name: tn(sp) })));
+    modal.appendChild(el('h2', null, result.isNew ? t('hatched', { name: tn(sp) }) : tn(sp)));
     const reveal = el('div', 'hatch-reveal');
-    reveal.appendChild(spriteToCanvas(sp.sprite, 6));
+    reveal.appendChild(spriteToCanvas(sp.sprite, 5, { shiny: result.shiny || this.game.state.pets[result.speciesId]?.shiny }));
     const name = el('div', 'hatch-name', tn(sp));
-    name.style.color = RARITY[fam.rarity].color;
+    name.style.color = RARITY[result.rarity].color;
     reveal.appendChild(name);
-    reveal.appendChild(el('div', 'card-sub', t('rarity_names')[fam.rarity]));
+    reveal.appendChild(el('div', 'card-sub', t('rarity_names')[result.rarity]));
+    if (result.shiny) reveal.appendChild(el('div', 'shiny-tag', t('shiny_hatched')));
+    if (!result.isNew) {
+      if (result.rarityUp) reveal.appendChild(el('div', 'card-sub gold-text', t('rarity_up')));
+      if (result.shards > 0) reveal.appendChild(el('div', 'card-sub', t('got_shards', { n: result.shards })));
+      if (result.gems > 0) reveal.appendChild(el('div', 'card-sub', `+${result.gems} ${t('gems')}`));
+    }
     modal.appendChild(reveal);
     const actions = el('div', 'modal-actions');
     const ok = el('button', 'btn btn-gold', t('claim'));
@@ -311,6 +355,128 @@ export class UI {
     actions.appendChild(ok);
     modal.appendChild(actions);
     ok.focus();
+  }
+
+  // ---------- Collection book ----------
+
+  renderBook(c) {
+    const st = this.game.state;
+    const { revealed } = bookEntries(st);
+    const total = SPECIES.length * 2;
+
+    const head = el('div', 'book-head');
+    head.appendChild(el('h2', null, t('book_title')));
+    head.appendChild(el('div', 'section-note', t('book_progress', { a: revealed, b: total })));
+    head.appendChild(el('div', 'book-bonus', t('book_bonus', { n: Math.round((bookMult(st) - 1) * 100) })));
+    c.appendChild(head);
+
+    // Milestones
+    const msBox = el('div', 'ms-list');
+    BOOK_MILESTONES.forEach((ms, i) => {
+      const key = { gems: 'ms_gems', egg: 'ms_egg', secret: 'ms_secret', frame: 'ms_frame' }[ms.reward];
+      const row = el('div', `ms-row${st.book.claimed.includes(i) ? ' done' : ''}`);
+      row.appendChild(el('span', null, t(key, { at: ms.at, n: ms.amount ?? '' })));
+      row.appendChild(el('span', 'ms-state', st.book.claimed.includes(i) ? t('claimed') : `${revealed}/${ms.at}`));
+      msBox.appendChild(row);
+    });
+    c.appendChild(msBox);
+
+    // Entries grid: normal + shiny per species
+    const grid = el('div', 'book-grid');
+    for (const sp of SPECIES) {
+      const pet = st.pets[sp.id];
+      grid.appendChild(this.bookEntry(sp, pet, false, !!pet));
+      grid.appendChild(this.bookEntry(sp, pet, true, st.book.shinySeen.includes(sp.id)));
+    }
+    c.appendChild(grid);
+  }
+
+  bookEntry(sp, pet, shiny, unlocked) {
+    const cell = el('div', `book-cell${unlocked ? '' : ' locked'}${shiny ? ' shiny-cell' : ''}`);
+    const box = el('div', 'sprite-box');
+    box.appendChild(unlocked ? spriteToCanvas(sp.sprite, 2, { shiny }) : spriteToSilhouette(sp.sprite, 2));
+    cell.appendChild(box);
+    const label = unlocked ? tn(sp) + (shiny ? ' ✨' : '') : t('book_locked');
+    cell.appendChild(el('div', 'book-name', label));
+    if (!shiny && pet && pet.stars >= MAX_STARS) cell.appendChild(el('div', 'book-mastered', t('book_mastered')));
+    return cell;
+  }
+
+  // ---------- Gear ----------
+
+  renderGear(c) {
+    const st = this.game.state;
+    const g = this.game;
+
+    const head = el('div', 'gear-head');
+    head.appendChild(el('div', 'section-note',
+      `${t('dust')} ${fmt(st.dust)} · ${t('inventory', { a: st.items.length, b: GEAR_CAP })}`));
+    const btns = el('div', 'gear-actions');
+    const best = el('button', 'btn btn-gold', t('equip_best'));
+    best.addEventListener('click', () => { g.equipBest(); this.renderPanel(); });
+    btns.appendChild(best);
+    const salv = el('button', 'btn', t('salvage'));
+    salv.addEventListener('click', () => {
+      const { dust, count } = g.salvageBelowEpic();
+      this.toast(t('salvaged', { c: count, d: dust }));
+      this.renderPanel();
+    });
+    btns.appendChild(salv);
+    head.appendChild(btns);
+    c.appendChild(head);
+
+    // Equipped per team pet
+    for (const id of g.activeTeam()) {
+      const pet = st.pets[id];
+      const card = el('div', 'card');
+      const box = el('div', 'sprite-box');
+      box.appendChild(spriteToCanvas(speciesById(id).sprite, 2, { shiny: pet.shiny }));
+      card.appendChild(box);
+      const body = el('div', 'card-body');
+      body.appendChild(el('div', 'card-title', tn(speciesById(id))));
+      for (const slot of GEAR_SLOTS) {
+        const itemId = pet.equip?.[slot];
+        const item = st.items.find(it => it.id === itemId);
+        const row = el('div', 'gear-row');
+        row.appendChild(el('span', 'gear-slot', t(`gear_${slot}`)));
+        if (item) {
+          const label = el('span', 'gear-stat', gearLabel(item));
+          label.style.color = GEAR_RARITY[item.rarity].color;
+          row.appendChild(label);
+          if (item.forge < FORGE_MAX) {
+            const fb = el('button', 'btn btn-sm', `${t('forge', { n: item.forge })} · ${fmt(forgeCost(item.forge))}`);
+            fb.disabled = st.dust < forgeCost(item.forge);
+            fb.addEventListener('click', () => { if (g.forgeItem(item.id)) this.renderPanel(); });
+            row.appendChild(fb);
+          } else {
+            row.appendChild(el('span', 'card-sub', t('forge_max')));
+          }
+        } else {
+          row.appendChild(el('span', 'card-sub', '·'));
+        }
+        body.appendChild(row);
+      }
+      card.appendChild(body);
+      c.appendChild(card);
+    }
+
+    // Loose inventory summary (top 10 by stat)
+    const equipped = g.equippedIds();
+    const loose = st.items.filter(it => !equipped.has(it.id))
+      .sort((a, b) => b.rarity - a.rarity || gearStat(b) - gearStat(a))
+      .slice(0, 10);
+    if (loose.length) {
+      const inv = el('div', 'ms-list');
+      for (const item of loose) {
+        const row = el('div', 'ms-row');
+        const label = el('span', null, `${t(`gear_${item.slot}`)} · ${gearLabel(item)}`);
+        label.style.color = GEAR_RARITY[item.rarity].color;
+        row.appendChild(label);
+        row.appendChild(el('span', 'ms-state', t('gear_from_zone', { n: item.zone + 1 })));
+        inv.appendChild(row);
+      }
+      c.appendChild(inv);
+    }
   }
 
   // ---------- Upgrades ----------
@@ -328,7 +494,6 @@ export class UI {
       info.appendChild(title);
       info.appendChild(el('div', 'card-sub', t(`upgrade_${up.id}_desc`)));
       row.appendChild(info);
-
       const maxed = st.upgrades[up.id] >= up.maxLevel;
       const cost = maxed ? 0 : upgradeCost(up, st.upgrades[up.id]);
       const btn = el('button', 'btn btn-sm btn-gold', maxed ? 'MAX' : `${t('upgrade_buy')} ${fmt(cost)}`);
@@ -427,22 +592,16 @@ export class UI {
     const stats = el('div', 'settings-group');
     stats.appendChild(el('h3', null, 'STATS'));
     stats.appendChild(el('p', 'section-note',
-      `${t('kills')} ${fmt(st.stats.kills)} · Boss ${fmt(st.stats.bossKills)} · ${t('tab_eggs')} ${fmt(st.stats.eggs)}`));
+      `${t('kills')} ${fmt(st.stats.kills)} · Boss ${fmt(st.stats.bossKills)} · ${t('tab_eggs')} ${fmt(st.stats.eggs)} · ${t('daily_streak', { n: st.daily.streak })}`));
     c.appendChild(stats);
   }
 
-  bindBattleButtonsText() {
-    $('#boostBtn').textContent = t('boost_btn');
-    $('#bossRetry').textContent = t('boss_wave');
-  }
-
-  // ---------- Welcome back ----------
+  // ---------- Welcome back / daily ----------
 
   showWelcomeBack(result) {
     const { scrim, modal } = this.modal();
     modal.appendChild(el('h2', null, t('welcome_back')));
     modal.appendChild(el('p', 'modal-sub', t('away_for', { t: clock(result.cappedMs) })));
-
     for (const [label, val] of [
       [t('offline_gold'), fmt(result.gold)],
       [t('offline_xp'), fmt(result.xp)],
@@ -453,7 +612,6 @@ export class UI {
       row.appendChild(el('b', null, val));
       modal.appendChild(row);
     }
-
     const actions = el('div', 'modal-actions');
     const dbl = el('button', 'btn btn-ad', t('claim_double'));
     dbl.addEventListener('click', async () => {
@@ -464,7 +622,6 @@ export class UI {
       scrim.remove();
     });
     actions.appendChild(dbl);
-
     const claim = el('button', 'btn', t('claim'));
     claim.addEventListener('click', () => {
       applyOffline(this.game, result, 1);
@@ -474,6 +631,27 @@ export class UI {
     actions.appendChild(claim);
     modal.appendChild(actions);
     dbl.focus();
+  }
+
+  showDaily(result) {
+    const { scrim, modal } = this.modal();
+    modal.appendChild(el('h2', null, t('daily_title')));
+    modal.appendChild(el('p', 'modal-sub', `${t('daily_day', { n: result.day })} · ${t('daily_streak', { n: result.streak })}`));
+    const reveal = el('div', 'hatch-reveal');
+    if (result.type === 'gold') reveal.appendChild(el('div', 'hatch-name gold-text', t('daily_gold', { n: fmt(result.amount) })));
+    if (result.type === 'gems') reveal.appendChild(el('div', 'hatch-name teal-text', t('daily_gems', { n: result.amount })));
+    if (result.type === 'egg') reveal.appendChild(el('div', 'hatch-name', t('daily_egg')));
+    modal.appendChild(reveal);
+    const actions = el('div', 'modal-actions');
+    const ok = el('button', 'btn btn-gold', t('claim'));
+    ok.addEventListener('click', () => {
+      scrim.remove();
+      if (result.hatch) this.hatchModal(result.hatch);
+    });
+    actions.appendChild(ok);
+    modal.appendChild(actions);
+    ok.focus();
+    this.refreshHeader();
   }
 
   // ---------- Primitives ----------
@@ -498,6 +676,12 @@ export class UI {
   }
 }
 
+function gearLabel(item) {
+  if (item.slot === 'weapon') return t('gear_atk', { n: fmt(gearStat(item)) });
+  if (item.slot === 'armor') return t('gear_hp', { n: fmt(gearStat(item)) });
+  return t(`gear_sub_${item.sub}`, { n: Math.round(gearStat(item) * 100) });
+}
+
 function setText(sel, text) {
   const n = document.querySelector(sel);
   if (n && n.textContent !== text) n.textContent = text;
@@ -511,5 +695,3 @@ function clock(ms) {
   if (m > 0) return `${m}m ${s % 60}s`;
   return `${s}s`;
 }
-
-export { computeOffline };

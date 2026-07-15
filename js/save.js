@@ -2,14 +2,60 @@
 // plus a portable export/import string (PF1.<base64 of utf-8 json>).
 
 const KEY = 'pixel-familiars-save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
+
+const SHARDS_BY_RARITY = [1, 2, 4, 8, 16];
 
 export function migrate(raw) {
   if (!raw || typeof raw !== 'object') return null;
-  const st = { ...raw };
-  // Future migrations: if (st.version === 1) { ...; st.version = 2; }
+  let st = { ...raw };
   if (typeof st.version !== 'number' || st.version > SAVE_VERSION) return null;
+  if (st.version === 1) st = migrateV1toV2(st);
   return st;
+}
+
+// v1 had familiars[] instances (possible duplicates per species) and id-based
+// teams. v2 keeps the best instance per species; extras become shards.
+function migrateV1toV2(v1) {
+  const pets = {};
+  const shards = {};
+  const byId = new Map();
+  for (const f of v1.familiars ?? []) {
+    byId.set(f.id, f);
+    const cur = pets[f.speciesId];
+    if (!cur || f.rarity > cur.rarity || (f.rarity === cur.rarity && f.level > cur.level)) {
+      if (cur) shards[f.speciesId] = (shards[f.speciesId] ?? 0) + SHARDS_BY_RARITY[cur.rarity];
+      pets[f.speciesId] = { rarity: f.rarity, level: f.level, xp: f.xp ?? 0, stars: 0, shiny: false, equip: {} };
+    } else {
+      shards[f.speciesId] = (shards[f.speciesId] ?? 0) + SHARDS_BY_RARITY[f.rarity];
+    }
+  }
+  if (Object.keys(pets).length === 0) pets.emberfox = { rarity: 0, level: 1, xp: 0, stars: 0, shiny: false, equip: {} };
+  const team = [...new Set((v1.team ?? []).map(id => byId.get(id)?.speciesId).filter(sp => sp && pets[sp]))];
+  return {
+    version: 2,
+    gold: v1.gold ?? 0,
+    gems: v1.gems ?? 0,
+    zone: v1.zone ?? 0,
+    wave: v1.wave ?? 1,
+    highestZone: v1.highestZone ?? 0,
+    pets,
+    shards,
+    team: team.length ? team.slice(0, 4) : [Object.keys(pets)[0]],
+    items: [],
+    nextItemId: 1,
+    dust: 0,
+    upgrades: v1.upgrades ?? { atk: 0, hp: 0, gold: 0, offline: 0 },
+    boostUntil: v1.boostUntil ?? 0,
+    lastSeen: v1.lastSeen ?? Date.now(),
+    lastInterstitial: v1.lastInterstitial ?? 0,
+    lastFreeEgg: v1.lastFreeEgg ?? 0,
+    stats: v1.stats ?? { kills: 0, bossKills: 0, eggs: 0, goldEarned: 0 },
+    settings: v1.settings ?? { lang: null },
+    book: { shinySeen: [], claimed: [] },
+    pity: 0,
+    daily: { streak: 0, last: null },
+  };
 }
 
 export function loadState(storage = globalThis.localStorage) {

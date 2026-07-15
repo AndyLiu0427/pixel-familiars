@@ -2,9 +2,8 @@
 // hit flashes, floating damage numbers, kill particles, boss shake.
 
 import { drawSprite, spriteSize } from './sprites.js';
-import { ZONE_THEMES } from './data.js';
-import { zoneData } from './data.js';
-import { speciesById, famStage } from './game.js';
+import { ZONE_THEMES, zoneData } from './data.js';
+import { speciesById, petStage } from './game.js';
 
 const STAGE_GLOW = [null, 'rgba(255,255,255,0.10)', 'rgba(245,185,66,0.20)'];
 
@@ -136,24 +135,26 @@ export class BattleScene {
     }
 
     // Team
-    const team = g.activeFamiliars();
-    const scale = Math.max(3, Math.round(Math.min(w, 640) / 130));
-    team.forEach((f, i) => {
-      const sp = speciesById(f.speciesId);
+    const team = g.activeTeam();
+    const scale = Math.max(2, Math.round(Math.min(w, 640) / 200));
+    team.forEach((id, i) => {
+      const pet = g.state.pets[id];
+      const sp = speciesById(id);
       const size = spriteSize(sp.sprite, scale);
       const col = i % 2, row = Math.floor(i / 2);
       const x = w * 0.10 + col * (size.w * 0.85) - row * size.w * 0.28;
       const bob = Math.sin(this.time * 2.4 + i * 1.7) * 3;
       const lunge = this.attackPhase(i);
       const y = this.groundY() - size.h + bob - row * size.h * 0.42;
-      const stage = famStage(f);
+      const stage = petStage(pet);
       if (STAGE_GLOW[stage]) {
         ctx.fillStyle = STAGE_GLOW[stage];
         ctx.beginPath();
         ctx.ellipse(x + size.w / 2, this.groundY() - row * size.h * 0.42 + 4, size.w * 0.55, 8, 0, 0, Math.PI * 2);
         ctx.fill();
       }
-      drawSprite(ctx, sp.sprite, x + lunge, y, scale, { brighten: stage * 0.05 });
+      const breath = Math.floor(this.time * 2 + i) % 2;
+      drawSprite(ctx, sp.sprite, x + lunge, y, scale, { brighten: stage * 0.04, shiny: pet.shiny, breath });
       // Shadow
       ctx.fillStyle = 'rgba(0,0,0,0.30)';
       ctx.beginPath();
@@ -164,7 +165,7 @@ export class BattleScene {
     // Monster
     const m = g.monster;
     if (m) {
-      const mScale = m.isBoss ? scale + 2 : scale;
+      const mScale = m.isBoss ? scale + 1 : scale;
       const size = spriteSize(m.key, mScale);
       const bob = Math.sin(this.time * 1.8) * 4;
       const x = this.monsterX() - size.w / 2;
@@ -175,7 +176,8 @@ export class BattleScene {
       ctx.fill();
       const flash = this.hitFlash > 0;
       if (flash) this.hitFlash -= dt;
-      drawSprite(ctx, m.key, x, y, mScale, { flip: true, brighten: flash ? 0.45 : (m.isBoss ? 0.06 : 0) });
+      const mBreath = Math.floor(this.time * 1.6) % 2;
+      drawSprite(ctx, m.key, x, y, mScale, { flip: true, breath: mBreath, brighten: flash ? 0.45 : (m.isBoss ? 0.06 : 0) });
 
       // Monster HP bar
       const bw = Math.max(70, size.w);
